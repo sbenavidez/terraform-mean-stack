@@ -1,0 +1,8 @@
+---
+- name: install MongoDB 
+  hosts: mongo
+  become: true
+  gather_facts: no
+  roles:
+    - mongodb
+
