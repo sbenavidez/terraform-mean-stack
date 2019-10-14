@@ -27,7 +27,7 @@ module "vpc" {
   }
 }
 
-# Security group for SQL Server 
+# Security group for Express and Mongo server
 resource "aws_security_group" "App-Mean-SB" {
 
   name = "App-Mean-SB"
@@ -54,6 +54,16 @@ resource "aws_security_group" "App-Mean-SB" {
     description = "nodeJS Express "
   }
 
+  ingress {
+    cidr_blocks = [
+        "0.0.0.0/0"
+      ]
+    from_port = 27017
+    to_port = 27017
+    protocol = "tcp"
+    description = "MongoDB Access"
+  }
+
   // Terraform removes the default rule
   egress {
     from_port = 0
@@ -71,7 +81,7 @@ resource "aws_security_group" "App-Mean-SB" {
 }
 
 
-# NodeJS Express backend
+# NodeJS Express backend and MongoDB
 resource "aws_instance" "App-Mean-Test-SB" {
   ami           = "ami-0b69ea66ff7391e80" # AWS Amazon Linux on us-east-1
   instance_type = "t2.nano"
@@ -115,7 +125,7 @@ resource "aws_instance" "App-Mean-Test-SB" {
             #install git
             sudo yum -y install git
 
-            #Install express
+            #Install express and mongoose libs
             npm install express mongoose
 
           EOF
@@ -127,6 +137,7 @@ resource "aws_instance" "App-Mean-Test-SB" {
 
 }
 
+# Front End Anglugar Layer
 resource "aws_s3_bucket" "App-Mean-Test-SB" {
   bucket = "app-mean-test-sb"
   acl    = "public-read"
@@ -137,7 +148,7 @@ resource "aws_s3_bucket" "App-Mean-Test-SB" {
   }  
 }
 
-
+# Will be replace by MongoDB on EC2
 # resource "aws_dynamodb_table" "items-table" {
 #   name         = "items"
 #   billing_mode = "PAY_PER_REQUEST"
@@ -154,8 +165,7 @@ resource "aws_s3_bucket" "App-Mean-Test-SB" {
 #     name = "type"
 #     type = "S"
 #   }
-
-
+#
 #   tags = {
 #     Name        = "items"
 #     Createdby   = "SBenavidez"
