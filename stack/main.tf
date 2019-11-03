@@ -131,8 +131,8 @@ resource "aws_instance" "App-Mean-Test-SB" {
           EOF
 
   lifecycle {
-    prevent_destroy = false
-    ignore_changes = [tags]
+    prevent_destroy = true
+    ignore_changes = [user_data]
   }
 
 }
@@ -148,27 +148,171 @@ resource "aws_s3_bucket" "App-Mean-Test-SB" {
   }  
 }
 
-# Will be replace by MongoDB on EC2
-# resource "aws_dynamodb_table" "items-table" {
-#   name         = "items"
-#   billing_mode = "PAY_PER_REQUEST"
-#   # hash_key     = "id"
-#   # range_key    = "type"
-#   hash_key     = "date"
-#   range_key    = "type"
+# Security group for jenkins server
+resource "aws_security_group" "jenkins-Mean-SB" {
 
-#   attribute {
-#     name = "date"
-#     type = "S"
-#   }
-#   attribute {
-#     name = "type"
-#     type = "S"
-#   }
-#
-#   tags = {
-#     Name        = "items"
-#     Createdby   = "SBenavidez"
-#   }
-  
-# }
+  name = "jenkins-mean-SB"
+  description = "Allow SSH Access"
+  vpc_id = module.vpc.vpc_id
+
+  ingress {
+    cidr_blocks = [
+        "0.0.0.0/0"
+      ]
+    from_port = 22
+    to_port = 22
+    protocol = "tcp"
+    description = "SSH Accesss"
+  }
+
+  ingress {
+    cidr_blocks = [
+        "0.0.0.0/0"
+      ]
+    from_port = 8080
+    to_port = 8080
+    protocol = "tcp"
+    description = "Jenkins Accesss"
+  }
+
+  // Terraform removes the default rule
+  egress {
+    from_port = 0
+    to_port = 0
+    protocol = "-1"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  tags = {
+    MNGT = "Terraform"
+    Environment = "DEV"
+    CreatedBy = "SBenavidez"
+    Name = "jenkins-Mean-SB-SG"
+  }
+}
+
+# NodeJS Express backend and MongoDB
+resource "aws_instance" "jenkins" {
+  ami           = "ami-0b69ea66ff7391e80" # AWS Amazon Linux on us-east-1
+  instance_type = "t2.nano"
+  key_name = "latam-SB-santiago"
+  iam_instance_profile = "${aws_iam_instance_profile.jenkins-profile.name}"
+
+  vpc_security_group_ids = ["${aws_security_group.jenkins-Mean-SB.id}"]
+  subnet_id = "${module.vpc.public_subnets[0]}"
+  associate_public_ip_address = true 
+
+  root_block_device {
+    volume_type = "gp2"
+    volume_size = "8"
+    delete_on_termination = true
+  }
+
+  tags = {
+    MNGT = "Terraform"
+    Environment = "DEV"
+    CreatedBy = "SBenavidez"
+    Name = "jenkins-server"
+  }
+
+  volume_tags = {
+    MNGT = "Terraform"
+    Environment = "DEV"
+    CreatedBy = "SBenavidez"
+    Name = "jenkins-server"
+  }
+
+  user_data = <<EOF
+            #! /bin/bash
+            exec >> /home/ec2-user/user-data.log 2>&1
+
+            #install nodeJS
+            sudo yum -y update
+            cd /home/ec2-user/
+            sudo yum install -y gcc-c++ make
+            curl -sL https://rpm.nodesource.com/setup_11.x | sudo -E bash -
+            sudo yum install -y nodejs
+
+            #install git
+            sudo yum -y install git
+
+            #Install express and mongoose libs
+            npm install -g @angular/cli 
+
+            #install jenkins
+            sudo yum remove java-1.7.0-openjdk -y
+            sudo yum install java-1.8.0 -y
+
+            sudo wget -O /etc/yum.repos.d/jenkins.repo http://pkg.jenkins-ci.org/redhat/jenkins.repo
+            sudo rpm --import http://pkg.jenkins-ci.org/redhat/jenkins-ci.org.key
+
+            echo 'installing jenkins.......'
+
+            sudo yum install jenkins -y
+
+            echo 'configuring service.......'
+
+            sudo service jenkins start
+            chkconfig jenkins on
+
+            ## Agregar sudoers para user Jenkins
+          EOF
+
+  lifecycle {
+    prevent_destroy = true
+    ignore_changes = [user_data]
+  }
+
+}
+
+resource "aws_iam_role" "jenkins-role" {
+  name = "jenkins-role"
+
+  assume_role_policy =<<EOF
+{
+      "Version": "2012-10-17",
+      "Statement": [
+        {
+          "Action": "sts:AssumeRole",
+          "Principal": {
+            "Service": "ec2.amazonaws.com"
+          },
+          "Effect": "Allow",
+          "Sid": ""
+        }
+      ]
+}
+EOF
+
+  tags = {
+    MNGT = "Terraform"
+    Environment = "DEV"
+    CreatedBy = "SBenavidez"
+    Name = "jenkins-role"
+  }
+}
+
+resource "aws_iam_role_policy" "jenkins_policy" {
+  name = "jenkins_policy"
+  role = "${aws_iam_role.jenkins-role.id}"
+
+  policy = <<EOF
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Action": [
+        "s3:*"
+      ],
+      "Effect": "Allow",
+      "Resource": "*"
+    }
+  ]
+}
+EOF
+}
+
+resource "aws_iam_instance_profile" "jenkins-profile" {                             
+  name  = "jenkins-profile"                         
+  role = "${aws_iam_role.jenkins-role.name}"
+}
